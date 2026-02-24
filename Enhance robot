@@ -1,0 +1,261 @@
+import { useRef, useMemo } from 'react';
+import { useFrame } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
+import * as THREE from 'three';
+
+interface EnhancedRobotProps {
+  position: [number, number, number];
+  rotation: number;
+  activeMotion: string;
+  simTime: number;
+  isHoldingObject: boolean;
+  heldObjectColor: string | null;
+  isShowingIntent: boolean;
+  isSpeaking: boolean;
+  currentDialogue: string | null;
+}
+
+export const EnhancedRobot = ({
+  position,
+  rotation,
+  activeMotion,
+  simTime,
+  isHoldingObject,
+  heldObjectColor,
+  isShowingIntent,
+  isSpeaking,
+  currentDialogue,
+}: EnhancedRobotProps) => {
+  const groupRef = useRef<THREE.Group>(null);
+  const headRef = useRef<THREE.Group>(null);
+  const leftArmRef = useRef<THREE.Group>(null);
+  const rightArmRef = useRef<THREE.Group>(null);
+  const leftLegRef = useRef<THREE.Group>(null);
+  const rightLegRef = useRef<THREE.Group>(null);
+  const eyeRef = useRef<THREE.Mesh>(null);
+
+  // Materials
+  const materials = useMemo(() => ({
+    metal: { color: '#374151', metalness: 0.85, roughness: 0.15 },
+    joint: { color: '#1e293b', metalness: 0.9, roughness: 0.1 },
+    accent: { color: '#0ea5e9', metalness: 0.7, roughness: 0.2, emissive: '#0ea5e9', emissiveIntensity: 0.3 },
+    eye: { color: '#0ea5e9', emissive: '#0ea5e9', emissiveIntensity: isSpeaking ? 1.5 : 0.8 },
+    intentGlow: { color: '#22d3ee', emissive: '#22d3ee', emissiveIntensity: 0.5 },
+  }), [isSpeaking]);
+
+  // Animation
+  useFrame(() => {
+    if (!headRef.current) return;
+
+    // Intent animation - subtle head tilt and scan movement
+    if (isShowingIntent && !isSpeaking) {
+      headRef.current.rotation.z = Math.sin(simTime * 1.5) * 0.1;
+      headRef.current.rotation.x = Math.sin(simTime * 0.5) * 0.05;
+    } else if (isSpeaking) {
+      // Speaking animation - slight head bob
+      headRef.current.rotation.x = Math.sin(simTime * 8) * 0.02;
+      headRef.current.rotation.z = 0;
+    } else {
+      headRef.current.rotation.z = THREE.MathUtils.lerp(headRef.current.rotation.z, 0, 0.1);
+      headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, 0, 0.1);
+    }
+
+    // Eye pulse when speaking
+    if (eyeRef.current) {
+      const mat = eyeRef.current.material as THREE.MeshStandardMaterial;
+      if (isSpeaking) {
+        mat.emissiveIntensity = 0.8 + Math.sin(simTime * 12) * 0.5;
+      } else if (isShowingIntent) {
+        mat.emissiveIntensity = 0.6 + Math.sin(simTime * 3) * 0.3;
+      } else {
+        mat.emissiveIntensity = 0.5;
+      }
+    }
+  });
+
+  // Get animation parameters based on motion
+  const getAnimationParams = () => {
+    switch (activeMotion) {
+      case 'walk':
+        return { legSwing: Math.sin(simTime * 6) * 0.4, armSwing: Math.sin(simTime * 6) * 0.3 };
+      case 'run':
+        return { legSwing: Math.sin(simTime * 10) * 0.7, armSwing: Math.sin(simTime * 10) * 0.6 };
+      case 'carry':
+        return { legSwing: Math.sin(simTime * 5) * 0.3, armSwing: 0.5 };
+      default:
+        return { legSwing: 0, armSwing: 0 };
+    }
+  };
+
+  const anim = getAnimationParams();
+
+  return (
+    <group ref={groupRef} position={position} rotation={[0, rotation, 0]}>
+      {/* Intent glow ring */}
+      {isShowingIntent && (
+        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.6, 0.8, 32]} />
+          <meshBasicMaterial 
+            color="#22d3ee" 
+            transparent 
+            opacity={0.4 + Math.sin(simTime * 4) * 0.2} 
+          />
+        </mesh>
+      )}
+
+      {/* Torso */}
+      <group position={[0, 1.2, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.4, 0.5, 0.25]} />
+          <meshStandardMaterial {...materials.metal} />
+        </mesh>
+        
+        {/* Chest display/panel */}
+        <mesh position={[0, 0.1, 0.13]}>
+          <boxGeometry args={[0.2, 0.15, 0.02]} />
+          <meshStandardMaterial 
+            {...materials.accent}
+            emissiveIntensity={isSpeaking ? 0.8 : 0.3}
+          />
+        </mesh>
+
+        {/* Speaking indicator LEDs */}
+        {isSpeaking && (
+          <group position={[0, 0.05, 0.135]}>
+            {[-0.06, -0.02, 0.02, 0.06].map((x, i) => (
+              <mesh key={i} position={[x, 0, 0]}>
+                <sphereGeometry args={[0.015, 8, 8]} />
+                <meshBasicMaterial 
+                  color="#22d3ee" 
+                  transparent
+                  opacity={Math.sin(simTime * 15 + i * 0.5) > 0 ? 1 : 0.3}
+                />
+              </mesh>
+            ))}
+          </group>
+        )}
+
+        {/* Head */}
+        <group ref={headRef} position={[0, 0.4, 0]}>
+          <mesh castShadow>
+            <boxGeometry args={[0.22, 0.2, 0.2]} />
+            <meshStandardMaterial {...materials.metal} />
+          </mesh>
+          
+          {/* Visor/Eye */}
+          <mesh ref={eyeRef} position={[0, 0.02, 0.11]}>
+            <boxGeometry args={[0.16, 0.05, 0.01]} />
+            <meshStandardMaterial {...materials.eye} />
+          </mesh>
+
+          {/* Antenna */}
+          <mesh position={[0.08, 0.12, 0]} castShadow>
+            <cylinderGeometry args={[0.01, 0.01, 0.08, 8]} />
+            <meshStandardMaterial {...materials.joint} />
+          </mesh>
+          <mesh position={[0.08, 0.17, 0]}>
+            <sphereGeometry args={[0.015, 8, 8]} />
+            <meshStandardMaterial 
+              color={isSpeaking ? '#22d3ee' : '#374151'} 
+              emissive={isSpeaking ? '#22d3ee' : '#000000'}
+              emissiveIntensity={isSpeaking ? 1 : 0}
+            />
+          </mesh>
+        </group>
+
+        {/* Left Arm */}
+        <group ref={leftArmRef} position={[-0.28, 0.15, 0]} rotation={[isHoldingObject ? 0.5 : anim.armSwing, 0, 0]}>
+          <mesh castShadow>
+            <boxGeometry args={[0.08, 0.35, 0.08]} />
+            <meshStandardMaterial {...materials.joint} />
+          </mesh>
+          <mesh position={[0, -0.25, 0]} castShadow>
+            <boxGeometry args={[0.07, 0.25, 0.07]} />
+            <meshStandardMaterial {...materials.metal} />
+          </mesh>
+          {/* Waving animation when intent */}
+          {isShowingIntent && !isHoldingObject && (
+            <group 
+              position={[0, -0.35, 0.05]} 
+              rotation={[Math.sin(simTime * 6) * 0.3, 0, 0]}
+            >
+              <mesh>
+                <boxGeometry args={[0.06, 0.08, 0.04]} />
+                <meshStandardMaterial {...materials.accent} />
+              </mesh>
+            </group>
+          )}
+        </group>
+
+        {/* Right Arm */}
+        <group ref={rightArmRef} position={[0.28, 0.15, 0]} rotation={[isHoldingObject ? 0.5 : -anim.armSwing, 0, 0]}>
+          <mesh castShadow>
+            <boxGeometry args={[0.08, 0.35, 0.08]} />
+            <meshStandardMaterial {...materials.joint} />
+          </mesh>
+          <mesh position={[0, -0.25, 0]} castShadow>
+            <boxGeometry args={[0.07, 0.25, 0.07]} />
+            <meshStandardMaterial {...materials.metal} />
+          </mesh>
+          
+          {/* Held object */}
+          {isHoldingObject && heldObjectColor && (
+            <mesh position={[0, -0.4, 0.1]} castShadow>
+              <boxGeometry args={[0.15, 0.15, 0.15]} />
+              <meshStandardMaterial 
+                color={heldObjectColor} 
+                emissive={heldObjectColor} 
+                emissiveIntensity={0.2} 
+              />
+            </mesh>
+          )}
+        </group>
+      </group>
+
+      {/* Legs */}
+      <group ref={leftLegRef} position={[-0.1, 0.7, 0]} rotation={[anim.legSwing, 0, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.1, 0.4, 0.1]} />
+          <meshStandardMaterial {...materials.joint} />
+        </mesh>
+        <mesh position={[0, -0.3, 0]} castShadow>
+          <boxGeometry args={[0.09, 0.35, 0.09]} />
+          <meshStandardMaterial {...materials.metal} />
+        </mesh>
+      </group>
+
+      <group ref={rightLegRef} position={[0.1, 0.7, 0]} rotation={[-anim.legSwing, 0, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.1, 0.4, 0.1]} />
+          <meshStandardMaterial {...materials.joint} />
+        </mesh>
+        <mesh position={[0, -0.3, 0]} castShadow>
+          <boxGeometry args={[0.09, 0.35, 0.09]} />
+          <meshStandardMaterial {...materials.metal} />
+        </mesh>
+      </group>
+
+      {/* Dialogue bubble */}
+      {isSpeaking && currentDialogue && (
+        <Html position={[0, 2.2, 0]} center>
+          <div className="bg-cyan-500/95 text-white px-4 py-2 rounded-xl text-sm max-w-[220px] text-center shadow-xl animate-fade-in pointer-events-none">
+            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[8px] border-r-[8px] border-t-[10px] border-l-transparent border-r-transparent border-t-cyan-500/95" />
+            "{currentDialogue}"
+          </div>
+        </Html>
+      )}
+
+      {/* Intent indicator */}
+      {isShowingIntent && !isSpeaking && (
+        <Html position={[0, 2, 0]} center>
+          <div className="flex flex-col items-center gap-1 pointer-events-none">
+            <div className="text-xl animate-bounce">👋</div>
+            <div className="bg-primary/80 text-primary-foreground text-[10px] px-2 py-1 rounded-full animate-pulse">
+              Showing intent...
+            </div>
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+};
